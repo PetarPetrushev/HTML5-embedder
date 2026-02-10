@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>URL Embedder</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: light-dark(#eee, #111);
+        --text: light-dark(#111, #eee);
+        --accent: light-dark(#1797ff, #258cc7);
+      }
+      body {
+        font-family: "Noto Sans", sans-serif;
+        font-optical-sizing: auto;
+        font-style: normal;
+        font-variation-settings: "wdth" 100;
+        color: var(--text);
+        background-color: var(--bg);
+        margin: 0;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+      }
+      iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: none;
+        z-index: 1;
+      }
+      div#error {
+        display: flex;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        align-content: center;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        text-align: center;
+        margin: min(20px, 5%);
+        margin-top: 15vh;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: calc(100vw - (min(20px, 5%) * 2));
+        pointer-events: none;
+        -webkit-user-select: none;
+        user-select: none;
+        z-index: 10;
+      }
+      span#errorIcon {
+        color: var(--accent);
+        font-size: 96px;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #loader {
+        width: 50px;
+        padding: 12px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: var(--accent);
+        --_m:
+          conic-gradient(#0000 10%, #000), linear-gradient(#000 0 0) content-box;
+        -webkit-mask: var(--_m);
+        mask: var(--_m);
+        -webkit-mask-composite: source-out;
+        mask-composite: subtract;
+        animation: l3 1s infinite linear;
+        position: absolute;
+        top: calc(50% - 37px);
+        left: calc(50% - 37px);
+        z-index: 100;
+        transition:
+          opacity 0.4s ease,
+          visibility 0.4s;
+      }
+      @keyframes l3 {
+        to {
+          transform: rotate(1turn);
+        }
+      }
+      #ui-layer {
+        position: relative;
+        z-index: 50;
+        pointer-events: none;
+        width: 100%;
+        height: 100%;
+      }
+      div#urlSelectorContainer {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        pointer-events: auto;
+      }
+      div#urlSelector {
+        background: var(--accent);
+        height: 40px;
+        border-radius: 40px;
+        display: flex;
+        align-content: center;
+        justify-content: center;
+        -webkit-user-select: none;
+        user-select: none;
+        flex-wrap: wrap;
+        flex-direction: row;
+        width: max-content;
+        gap: 6px;
+        padding-left: 12px;
+        padding-right: 15px;
+        align-items: center;
+        cursor: pointer;
+        transition:
+          box-shadow 0.2s,
+          transform 0.1s;
+        color: white;
+      }
+      div#urlSelector:active {
+        transform: scale(0.98);
+      }
+      span#urlSelectorText {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      div#urlSelector:hover {
+        box-shadow: 0 0 20px var(--accent);
+      }
+      #urlMenu {
+        position: absolute;
+        top: 50px;
+        left: 0;
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        min-width: 200px;
+        max-height: 300px;
+        overflow-y: auto;
+        display: none;
+        flex-direction: column;
+        padding: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        z-index: 60;
+      }
+      #urlMenu.active {
+        display: flex;
+      }
+      .url-option {
+        padding: 10px 15px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.2s;
+        font-size: 14px;
+        white-space: nowrap;
+      }
+      .url-option:hover {
+        background: var(--accent);
+        color: white;
+      }
+      #content {
+        transition: opacity 0.2s;
+      }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.material.com/icon?family=Material+Icons+Rounded"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+    />
+  </head>
+  <body>
+    <iframe id="mainIframe"></iframe>
+    <div id="loader"></div>
+    <div id="error">
+      <span id="errorIcon" class="material-symbols-rounded">warning</span>
+      <span id="errorMessage">Something went wrong.</span>
+    </div>
+    <div id="ui-layer">
+      <div id="content">
+        <div id="urlSelectorContainer">
+          <div id="urlSelector">
+            <span id="urlSelectorIcon" class="material-symbols-rounded"
+              >storage</span
+            >
+            <span id="urlSelectorText">Select URL</span>
+          </div>
+          <div id="urlMenu"></div>
+        </div>
+      </div>
+    </div>
+
+    <script defer>
+      const loader = document.getElementById("loader");
+      const iframe = document.getElementById("mainIframe");
+      const errorDiv = document.getElementById("error");
+      const urlMenu = document.getElementById("urlMenu");
+      const selectorBtn = document.getElementById("urlSelector");
+      const selectorText = document.getElementById("urlSelectorText");
+
+      let allUrls = [];
+      let currentUrlIndex = 0;
+      let isAutoLoading = false;
+      let loadTimeout;
+      let waitTime = 8000;
+
+      const sanitizeUrl = (url) => {
+        if (!url) return "about:blank";
+        const trimmed = url.trim();
+        if (
+          trimmed.toLowerCase().startsWith("javascript:") ||
+          trimmed.toLowerCase().startsWith("data:text/html")
+        ) {
+          return "about:blank";
+        }
+        return url;
+      };
+
+      const sanitizeInput = (val) => {
+        if (!val) return "";
+        return val.replace(/[;{}]/g, "");
+      };
+
+      function showLoader(show) {
+        if (show) {
+          loader.style.visibility = "visible";
+          loader.style.opacity = "1";
+        } else {
+          loader.style.opacity = "0";
+          setTimeout(() => {
+            if (loader.style.opacity === "0")
+              loader.style.visibility = "hidden";
+          }, 400);
+        }
+      }
+
+      function displayError(message = "Something went wrong.") {
+        document.getElementById("errorMessage").innerText = message;
+        errorDiv.style.pointerEvents = "auto";
+        errorDiv.style.opacity = "1";
+        showLoader(false);
+        document.getElementById("content").style.opacity = "0";
+        document.getElementById("content").style.pointerEvents = "none";
+        iframe.style.display = "none";
+      }
+
+      function loadUrl(index) {
+        if (index >= allUrls.length) {
+          displayError("All provided URLs failed to load.");
+          return;
+        }
+
+        currentUrlIndex = index;
+        const target = allUrls[index];
+        showLoader(true);
+        iframe.style.display = "block";
+
+        clearTimeout(loadTimeout);
+        loadTimeout = setTimeout(() => {
+          if (loader.style.visibility !== "hidden") {
+            loadNext();
+          }
+        }, waitTime);
+
+        iframe.src = sanitizeUrl(target.url);
+      }
+
+      function loadNext() {
+        if (isAutoLoading) {
+          loadUrl(currentUrlIndex + 1);
+        }
+      }
+
+      iframe.onload = () => {
+        clearTimeout(loadTimeout);
+        showLoader(false);
+        isAutoLoading = false;
+      };
+
+      iframe.onerror = () => {
+        if (isAutoLoading) {
+          loadNext();
+        }
+      };
+
+      selectorBtn.onclick = (e) => {
+        e.stopPropagation();
+        urlMenu.classList.toggle("active");
+      };
+
+      window.onclick = () => {
+        urlMenu.classList.remove("active");
+      };
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const params = new URLSearchParams(window.location.search);
+        const queryParams = new Proxy(params, {
+          get: (target, prop) => {
+            if (prop === "urls") {
+              const values = target.getAll("urls[]");
+              return values.length > 0 ? values : undefined;
+            }
+            return target.get(prop);
+          },
+        });
+
+        if (queryParams.title) {
+          document.title = queryParams.title;
+        }
+
+        if (queryParams.selectorName) {
+          selectorText.innerText = queryParams.selectorName;
+        }
+
+        if (queryParams.timeout) {
+          waitTime = parseInt(queryParams.timeout, 10) || 8000;
+        }
+
+        if (queryParams.allow) {
+          iframe.allow = sanitizeInput(queryParams.allow);
+        }
+
+        if (queryParams.sandbox) {
+          iframe.sandbox = sanitizeInput(queryParams.sandbox);
+        }
+
+        if (queryParams.colorScheme === "light") {
+          document.documentElement.style.colorScheme = "light";
+        } else if (queryParams.colorScheme === "dark") {
+          document.documentElement.style.colorScheme = "dark";
+        }
+
+        if (queryParams.accentColor) {
+          document.documentElement.style.setProperty(
+            "--accent",
+            sanitizeInput(queryParams.accentColor),
+          );
+        }
+        if (queryParams.backgroundColor) {
+          document.documentElement.style.setProperty(
+            "--bg",
+            sanitizeInput(queryParams.backgroundColor),
+          );
+        }
+        if (queryParams.textColor) {
+          document.documentElement.style.setProperty(
+            "--text",
+            sanitizeInput(queryParams.textColor),
+          );
+        }
+
+        if (queryParams.favicon) {
+          let link =
+            document.querySelector("link[rel~='icon']") ||
+            document.createElement("link");
+          link.rel = "icon";
+          link.href = sanitizeUrl(queryParams.favicon);
+          document.head.appendChild(link);
+        }
+
+        if (!queryParams.urls) {
+          displayError('No URLs provided. Use "?urls[]=" to add some.');
+        } else {
+          const rawUrls = Array.isArray(queryParams.urls)
+            ? queryParams.urls
+            : [queryParams.urls];
+          allUrls = rawUrls.map((item) => {
+            const match = item.match(/^\[(.*?)\]\((.*?)\)$/);
+            return match
+              ? { name: match[1], url: match[2] }
+              : { name: item, url: item };
+          });
+
+          allUrls.forEach((data, idx) => {
+            const opt = document.createElement("div");
+            opt.className = "url-option";
+            opt.innerText = data.name;
+            opt.onclick = () => {
+              isAutoLoading = false;
+              loadUrl(idx);
+              urlMenu.classList.remove("active");
+            };
+            urlMenu.appendChild(opt);
+          });
+
+          isAutoLoading = true;
+          loadUrl(0);
+        }
+      });
+    </script>
+  </body>
+</html>
